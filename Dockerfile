@@ -6,7 +6,7 @@ ARG AWG_TOOLS_REF=v3.1.20260812
 ARG GOST_REF=v3.3.0
 
 # Go binaries cross-compile on the build platform, no emulation
-FROM --platform=$BUILDPLATFORM golang:1.25-bookworm AS go
+FROM --platform=$BUILDPLATFORM golang:1.26-bookworm AS go
 ARG TARGETOS TARGETARCH TARGETVARIANT AWG_GO_REF GOST_REF
 ENV CGO_ENABLED=0 GOFLAGS=-trimpath
 RUN git clone --depth 1 --branch ${AWG_GO_REF} https://github.com/amnezia-vpn/amneziawg-go /src/amneziawg-go \
