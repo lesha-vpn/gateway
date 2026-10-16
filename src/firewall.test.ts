@@ -48,9 +48,23 @@ describe('renderFirewall', () => {
     expect(renderFirewall({ ...input, apiAddrs: [], tunnelAddrs: [] })).not.toContain('elements = {  }')
   })
 
+  it('forwards nothing without the gateway', () => {
+    expect(text).not.toContain('masquerade')
+    expect(text).not.toMatch(/chain forward \{[^}]*accept/)
+  })
+
+  it('gateway: LAN into the tunnel only, NAT, MSS clamp, DNS redirect', () => {
+    const gw = renderFirewall({ ...input, gateway: true, dnsRedirect: '1.1.1.1' })
+    expect(gw).toContain('iifname != "awg0" ip saddr @lan oifname "awg0" accept')
+    expect(gw).toContain('oifname "awg0" masquerade')
+    expect(gw).toContain('tcp option maxseg size set rt mtu')
+    expect(gw).toContain('th dport 53 dnat ip to 1.1.1.1')
+    expect(renderFirewall({ ...input, gateway: true, dnsRedirect: null })).not.toContain('dnat')
+  })
+
   it.runIf(nftAvailable())('is valid nft syntax', () => {
     const dir = mkdtempSync(join(tmpdir(), 'fw-'))
-    for(const v of [input, { ...input, apiAddrs: [], tunnelAddrs: [], bootstrapDns: ['1.1.1.1'] }]) {
+    for(const v of [input, { ...input, apiAddrs: [], tunnelAddrs: [], bootstrapDns: ['1.1.1.1'] }, { ...input, gateway: true, dnsRedirect: '1.1.1.1' }]) {
       writeFileSync(join(dir, 'fw.nft'), renderFirewall(v))
       execFileSync('nft', ['-c', '-f', join(dir, 'fw.nft')])
     }

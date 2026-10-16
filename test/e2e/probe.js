@@ -1,8 +1,27 @@
 // probe.js socks|http <proxyHost> <proxyPort> <host> <port>: GET http://host:port/ through the proxy,
 // print the body (the echo server answers with the client address it sees) or FAIL.
+// probe.js direct - - <host> <port>: the same GET over this host's own routes (the gateway).
+// probe.js dns - - <host> 53: one UDP datagram to host:53, print the reply (the source address seen).
 const net = require('node:net')
 const [mode, ph, pp, host, port] = process.argv.slice(2)
 const done = out => { console.log(out); process.exit(0) }
+if(mode === 'dns') {
+  const sock = require('node:dgram').createSocket('udp4')
+  setTimeout(() => done('FAIL timeout'), 4000)
+  sock.on('message', m => done(m.toString().trim()))
+  sock.send('probe', Number(port), host)
+  return
+}
+if(mode === 'direct') {
+  const req = require('node:http').get({ host, port: Number(port), timeout: 4000 }, res => {
+    let b = ''
+    res.on('data', d => { b += d })
+    res.on('end', () => done(b.trim()))
+  })
+  req.on('timeout', () => done('FAIL timeout'))
+  req.on('error', e => done(`FAIL ${e.message}`))
+  return
+}
 const sock = net.connect(Number(pp), ph)
 sock.setTimeout(4000, () => done('FAIL timeout'))
 sock.on('error', e => done(`FAIL ${e.message}`))
