@@ -1,0 +1,22 @@
+{
+  "name": "lesha-vpn-gw",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Docker gateway for Лёша VPN: AWG tunnel to LOCAL as a coordinator client, SOCKS5/HTTP proxy and LAN gateway",
+  "license": "MIT",
+  "main": "dist/main.js",
+  "scripts": {
+    "build": "tsc",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit -p tsconfig.test.json",
+    "e2e": "bash test/e2e/run.sh"
+  },
+  "devDependencies": {
+    "@types/node": "^22.20.5",
+    "typescript": "^5.7.2",
+    "vitest": "^5.0.4"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}
