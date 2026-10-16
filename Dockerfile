@@ -17,26 +17,26 @@ RUN --mount=type=cache,target=/root/go/pkg/mod --mount=type=cache,target=/root/.
  && go build -ldflags '-s -w' -o /out/amneziawg-go . \
  && cd /src/gost && go build -ldflags "-s -w -X main.version=${GOST_REF}" -o /out/gost ./cmd/gost
 
-# awg is C; built for the target (emulated on foreign platforms, it is small)
-# node:22-bookworm-slim is Debian bookworm too; reusing it saves a pull
-FROM node:22-bookworm-slim AS tools
+# awg is C; built for the target (emulated on foreign platforms, it is small) against musl,
+# like the runtime. node:22-alpine is reused so there is one base to pull
+FROM node:22-alpine AS tools
 ARG AWG_TOOLS_REF
-RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates git gcc libc6-dev make \
+RUN apk add --no-cache git build-base linux-headers \
  && git clone --depth 1 --branch ${AWG_TOOLS_REF} https://github.com/amnezia-vpn/amneziawg-tools /src \
  && make -C /src/src -j"$(nproc)" wg \
  && install -m 0755 /src/src/wg /out-awg
 
 # TypeScript compiles once, the output is platform-independent
-FROM --platform=$BUILDPLATFORM node:22-bookworm-slim AS app
+FROM --platform=$BUILDPLATFORM node:22-alpine AS app
 WORKDIR /app
 COPY package.json package-lock.json tsconfig.json ./
 RUN npm ci --no-audit --no-fund
 COPY src ./src
 RUN npx tsc
 
-FROM node:22-bookworm-slim
-RUN apt-get update && apt-get install -y --no-install-recommends iproute2 nftables ca-certificates \
- && rm -rf /var/lib/apt/lists/*
+# Alpine: musl, busybox; iproute2 for policy routing (busybox ip lacks rule/fwmark bits)
+FROM node:22-alpine
+RUN apk add --no-cache iproute2 nftables ca-certificates
 COPY --from=go /out/amneziawg-go /out/gost /usr/local/bin/
 COPY --from=tools /out-awg /usr/local/bin/awg
 COPY --from=app /app/dist /opt/lesha-vpn-gw/dist
