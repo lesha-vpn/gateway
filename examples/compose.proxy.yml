@@ -1,0 +1,25 @@
+# Лёша VPN gateway, proxy mode: SOCKS5 on :1080 and HTTP (CONNECT) on :8080 of this host,
+# all traffic through the AWG tunnel to LOCAL. First start: see README («Первый запуск»).
+services:
+  lesha-vpn-gw:
+    image: ghcr.io/lesha-vpn/gateway:latest
+    container_name: lesha-vpn-gw
+    restart: unless-stopped
+    cap_add: [NET_ADMIN]
+    devices: [/dev/net/tun:/dev/net/tun]
+    sysctls:
+      net.ipv4.conf.all.src_valid_mark: 1
+      net.ipv6.conf.all.disable_ipv6: 1
+    ports:
+      - "1080:1080"
+      - "8080:8080"
+    environment:
+      # Config name on the coordinator becomes gw-<DEVICE_NAME>
+      DEVICE_NAME: home
+      # PROXY_USER: me
+      # PROXY_PASSWORD: secret
+    volumes:
+      - lesha-vpn-gw:/data
+
+volumes:
+  lesha-vpn-gw:
