@@ -1,6 +1,6 @@
 import { hostname } from 'node:os'
 
-export const VERSION = '0.1.0'
+export const VERSION = '0.2.0'
 
 export const DEFAULT_COORDINATOR_URL = 'https://cryptgeon.kiraind.ru'
 
@@ -21,6 +21,10 @@ export interface Settings {
   handshakeTimeoutMs: number
   awgImpl: 'auto' | 'kernel' | 'userspace'
   loginCode: string | null
+  /** Route the LAN through the tunnel (devices set this container as their gateway). */
+  gateway: boolean
+  /** With the gateway: answer every LAN DNS query through the tunnel DNS. */
+  dnsIntercept: boolean
 }
 
 const PRIVATE_CIDRS = ['10.0.0.0/8', '172.16.0.0/12', '192.168.0.0/16']
@@ -45,12 +49,22 @@ export function loadSettings(env: NodeJS.ProcessEnv = process.env): Settings {
     handshakeTimeoutMs: duration(env.HANDSHAKE_TIMEOUT, 3 * 60_000, 'HANDSHAKE_TIMEOUT'),
     awgImpl: impl,
     loginCode: env.LESHA_LOGIN_CODE?.trim() || null,
+    gateway: flag(env.GATEWAY, true, 'GATEWAY'),
+    dnsIntercept: flag(env.DNS_INTERCEPT, true, 'DNS_INTERCEPT'),
   }
 }
 
 /** The coordinator's config name pattern is ^[a-z0-9-]{1,32}$ (NAME_RE). */
 export function slug(s: string): string {
   return s.toLowerCase().replace(/[^a-z0-9-]+/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '').slice(0, 24).replace(/-$/, '')
+}
+
+function flag(v: string | undefined, def: boolean, name: string): boolean {
+  if(v === undefined || v === '') return def
+  const s = v.trim().toLowerCase()
+  if(['1', 'on', 'true', 'yes'].includes(s)) return true
+  if(['0', 'off', 'false', 'no'].includes(s)) return false
+  throw new Error(`${name}: on или off, а не ${v}`)
 }
 
 function port(v: string | undefined, def: number, name: string): number {

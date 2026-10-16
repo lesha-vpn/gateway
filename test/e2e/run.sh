@@ -74,7 +74,7 @@ EOF
 cat > "$WORK/client.conf.tmpl" <<EOF
 [Interface]
 Address = 10.66.0.7/32
-DNS = 1.1.1.1, 8.8.8.8
+DNS = 198.51.100.10, 198.51.100.10
 PrivateKey = $CLI_PRIV
 MTU = 1280
 Jc = 5
@@ -101,12 +101,14 @@ done
 docker run -d --name $P-coord --network $P-wan --ip 172.30.0.20 -v "$WORK:/e2e:ro" \
   -e CONF_TEMPLATE=/e2e/client.conf.tmpl -e ENDPOINT=172.30.0.10:51820 \
   --entrypoint node "$IMAGE" /e2e/mock-coordinator.js >/dev/null
-docker run -d --name $P-client --network $P-lan --ip 172.31.0.10 -v "$WORK:/e2e:ro" --entrypoint sleep "$IMAGE" infinity >/dev/null
+docker run -d --name $P-client --network $P-lan --ip 172.31.0.10 --cap-add NET_ADMIN -v "$WORK:/e2e:ro" --entrypoint sleep "$IMAGE" infinity >/dev/null
+# The client also uses the gateway as its router (gateway mode)
+docker exec $P-client ip -4 route replace default via 172.31.0.2
 
 # Kernels without IPv6 have no such sysctl
 V6=(); [[ -e /proc/sys/net/ipv6 ]] && V6=(--sysctl net.ipv6.conf.all.disable_ipv6=1)
 docker create --name $P-gw --network $P-wan --ip 172.30.0.2 "${AWG_RUN[@]}" \
-  --sysctl net.ipv4.conf.all.src_valid_mark=1 "${V6[@]}" \
+  --sysctl net.ipv4.conf.all.src_valid_mark=1 --sysctl net.ipv4.ip_forward=1 "${V6[@]}" \
   -e COORDINATOR_URL=http://172.30.0.20:8080 -e DEVICE_NAME=e2e -e LAN_CIDRS=172.31.0.0/24 \
   -e POLL_INTERVAL=3s -e HANDSHAKE_TIMEOUT=20s -e AWG_IMPL="${AWG_IMPL:-auto}" \
   "$IMAGE" >/dev/null
@@ -122,7 +124,7 @@ wait_phase() {
   for _ in $(seq 1 60); do [[ $(phase) == "$1" ]] && return 0; sleep 1; done
   fail "phase $(phase), expected $1"
 }
-probe() { docker exec $P-client node /e2e/probe.js "$1" 172.31.0.2 "$2" "$3" 8000; }
+probe() { docker exec $P-client node /e2e/probe.js "$1" 172.31.0.2 "$2" "$3" "${4:-8000}"; }
 expect_tunnel() {
   local out
   for _ in $(seq 1 30); do
@@ -139,15 +141,17 @@ never_leaks() {
   local end=$((SECONDS + $1)) out
   while (( SECONDS < end )); do
     for t in $LEAK_TARGETS; do
-      out=$(probe socks 1080 $t)
-      [[ $out == 10.66.0.7 || $out == FAIL* ]] || fail "leak: $t saw $out"
+      for m in socks direct; do
+        out=$(probe $m 1080 $t)
+        [[ $out == 10.66.0.7 || $out == FAIL* ]] || fail "leak ($m): $t saw $out"
+      done
     done
   done
 }
 
 wait_phase need_login
 ok "starts without a token in need_login"
-expect_closed() { local out; out=$(probe socks 1080 198.51.100.10); [[ $out == FAIL* ]] || fail "traffic passes without a tunnel: $out"; }
+expect_closed() { local out m; for m in socks direct; do out=$(probe $m 1080 198.51.100.10); [[ $out == FAIL* ]] || fail "traffic passes without a tunnel: $out ($m)"; done; }
 expect_closed
 ok "no tunnel, no traffic"
 
@@ -161,8 +165,16 @@ docker exec $P-coord node -e "require('http').get('http://127.0.0.1:8080/control
 expect_tunnel socks 1080 198.51.100.10
 expect_tunnel http 8080 198.51.100.10
 ok "SOCKS5 and HTTP CONNECT go through the tunnel"
-docker exec $P-gw cat /etc/resolv.conf | grep -q 'nameserver 1.1.1.1' || fail "resolv.conf does not follow the tunnel DNS"
+docker exec $P-gw cat /etc/resolv.conf | grep -q 'nameserver 198.51.100.10' || fail "resolv.conf does not follow the tunnel DNS"
 ok "container DNS is the tunnel DNS"
+
+expect_tunnel direct - 198.51.100.10
+ok "gateway: a LAN device routed through the gateway goes through the tunnel"
+out=$(probe dns - 9.9.9.9 53)
+[[ $out == 10.66.0.7 ]] || fail "DNS to 9.9.9.9 was not redirected into the tunnel: $out"
+out=$(probe dns - 172.31.0.2 53)
+[[ $out == 10.66.0.7 ]] || fail "DNS to the gateway itself was not answered through the tunnel: $out"
+ok "gateway: LAN DNS answered through the tunnel DNS"
 
 docker exec $P-gw lesha-vpn-gw status | grep -q 'gw-e2e' || fail "status"
 docker exec $P-gw lesha-vpn-gw health || fail "health"
@@ -191,7 +203,7 @@ ok "restart: back up from the stored token and config"
 coord '{"state":"suspended"}'
 wait_phase suspended
 never_leaks 8
-expect_closed() { local out; out=$(probe socks 1080 198.51.100.11); [[ $out == FAIL* ]] || fail "traffic passes while suspended: $out"; }
+expect_closed() { local out m; for m in socks direct; do out=$(probe $m 1080 198.51.100.11); [[ $out == FAIL* ]] || fail "traffic passes while suspended: $out ($m)"; done; }
 expect_closed
 coord '{"state":"active"}'
 wait_phase up

@@ -17,6 +17,10 @@ export interface FirewallInput {
   tunnelAddrs: string[]
   /** Docker's resolvers, opened only while the API is resolved before the first tunnel. */
   bootstrapDns?: string[]
+  /** Gateway mode: forward and masquerade the LAN into the tunnel. */
+  gateway?: boolean
+  /** With the gateway: send every DNS query from the LAN to this server (the tunnel DNS). */
+  dnsRedirect?: string | null
 }
 
 /**
@@ -77,9 +81,35 @@ export function renderFirewall(input: FirewallInput): string {
     '    ip daddr @lan accept',
     '  }',
     '',
+    // LAN traffic goes into the tunnel or nowhere: with awg0 gone it has no way out (fail-closed)
     '  chain forward {',
     '    type filter hook forward priority filter; policy drop;',
+    ...(input.gateway ? [
+      '    ct state invalid drop',
+      '    ct state established,related accept',
+      `    iifname != "${IFACE}" ip saddr @lan oifname "${IFACE}" accept`,
+    ] : []),
     '  }',
+    ...(input.gateway ? [
+      '',
+      // The tunnel MTU (1280) is below the LAN's 1500; clamp so TCP never needs fragments
+      '  chain mss {',
+      '    type filter hook forward priority mangle; policy accept;',
+      `    oifname "${IFACE}" tcp flags syn / syn,rst tcp option maxseg size set rt mtu`,
+      `    iifname "${IFACE}" tcp flags syn / syn,rst tcp option maxseg size set rt mtu`,
+      '  }',
+      '  chain postnat {',
+      '    type nat hook postrouting priority srcnat; policy accept;',
+      `    oifname "${IFACE}" masquerade`,
+      '  }',
+      ...(input.dnsRedirect ? [
+        // Any DNS server a LAN device asks through us (8.8.8.8, the gateway itself...) answers from the tunnel
+        '  chain prenat {',
+        '    type nat hook prerouting priority dstnat; policy accept;',
+        `    iifname != "${IFACE}" ip saddr @lan meta l4proto { tcp, udp } th dport 53 dnat ip to ${input.dnsRedirect}`,
+        '  }',
+      ] : []),
+    ] : []),
     '}',
     '',
   ].join('\n')

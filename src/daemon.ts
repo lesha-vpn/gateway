@@ -90,6 +90,11 @@ export class Daemon {
     await this.tunnel.setupRouting(this.state.apiAddrs ?? [])
     await this.refreshApiAddrs({ bootstrap: true })
     this.proxy.start()
+    if(this.s.gateway) {
+      const fwd = readFileSync('/proc/sys/net/ipv4/ip_forward', 'utf8').trim()
+      if(fwd === '1') log.info(`Режим шлюза: LAN ${this.s.lanCidrs.join(', ')} → туннель${this.s.dnsIntercept ? ', DNS через туннель' : ''}`)
+      else log.warn('Режим шлюза выключен: нужен sysctl net.ipv4.ip_forward=1 (см. examples/compose.gateway.yml)')
+    }
 
     this.token = this.store.readToken()
     if(!this.token && this.s.loginCode) await this.loginWithCode(this.s.loginCode)
@@ -348,6 +353,8 @@ export class Daemon {
       apiPort: this.apiPort,
       proxyPorts: [this.s.socksPort, this.s.httpPort],
       tunnelAddrs: this.parsed?.addresses ?? [],
+      gateway: this.s.gateway,
+      dnsRedirect: this.s.gateway && this.s.dnsIntercept ? this.parsed?.dns[0] ?? null : null,
     }, join(this.s.runDir, 'firewall.nft'))
   }
 

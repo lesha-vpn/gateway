@@ -1,0 +1,38 @@
+# Лёша VPN gateway, gateway mode: the container gets its own address in the LAN (ipvlan) and
+# LAN devices use it as their router and DNS server; the proxies listen there too.
+# Wi-Fi variant: Wi-Fi drivers drop frames from the extra MAC addresses macvlan uses, so this
+# uses ipvlan L2, which shares the host MAC. Change parent, subnet, gateway and the address to
+# match your network; pick an address outside your router's DHCP pool.
+services:
+  lesha-vpn-gw:
+    image: ghcr.io/lesha-vpn/gateway:latest
+    container_name: lesha-vpn-gw
+    restart: unless-stopped
+    cap_add: [NET_ADMIN]
+    devices: [/dev/net/tun:/dev/net/tun]
+    sysctls:
+      net.ipv4.conf.all.src_valid_mark: 1
+      net.ipv4.ip_forward: 1
+      net.ipv6.conf.all.disable_ipv6: 1
+    environment:
+      DEVICE_NAME: home
+    networks:
+      lan:
+        ipv4_address: 192.168.1.250
+    volumes:
+      - lesha-vpn-gw:/data
+
+networks:
+  lan:
+    driver: ipvlan
+    driver_opts:
+      parent: wlan0
+      ipvlan_mode: l2
+    ipam:
+      config:
+        - subnet: 192.168.1.0/24
+          gateway: 192.168.1.1  # your router
+          ip_range: 192.168.1.250/32
+
+volumes:
+  lesha-vpn-gw:

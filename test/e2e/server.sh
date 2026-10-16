@@ -9,4 +9,8 @@ amneziawg-go awg0
 awg setconf awg0 /e2e/server.conf
 ip -4 address add 10.66.0.1/16 dev awg0
 ip link set dev awg0 mtu 1280 up
-exec node -e "require('http').createServer((q,s)=>s.end(q.socket.remoteAddress.replace('::ffff:','')+'\n')).listen(8000)"
+# :53/udp answers likewise, standing in for the tunnel DNS; bound to INTERNET_IP so replies come
+# from it (an unbound socket would answer from 10.66.0.1)
+exec node -e "
+require('http').createServer((q,s)=>s.end(q.socket.remoteAddress.replace('::ffff:','')+'\n')).listen(8000)
+const u=require('dgram').createSocket('udp4');u.on('message',(m,r)=>u.send(r.address,r.port,r.address));u.bind(53,process.env.INTERNET_IP)"
