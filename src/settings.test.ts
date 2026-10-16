@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest'
-import { duration, loadSettings, slug } from './settings'
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
+import { duration, loadSettings, slug, VERSION } from './settings'
 import { gostArgs } from './proxy'
 
 describe('settings', () => {
@@ -44,4 +46,9 @@ describe('gostArgs', () => {
     expect(gostArgs({ socksPort: 0, httpPort: 3128, proxyUser: 'me', proxyPassword: 'p@ss:w/rd' }))
       .toEqual(['-L', 'http://me:p%40ss%3Aw%2Frd@:3128'])
   })
+})
+
+// package.json's version is what CI releases as v<version>; the binary must report the same
+it('VERSION matches package.json', () => {
+  expect(VERSION).toBe(JSON.parse(readFileSync(join(__dirname, '../package.json'), 'utf8')).version)
 })
